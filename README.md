@@ -69,7 +69,7 @@ de **Python 3**: no hay dependencias, no hay Java, no hay emulador.
 
 * Clona el repositorio:
   ```bash
-  git clone https://github.com/TU_USUARIO/anilinux-terminal.git
+  git clone https://github.com/PedroSG08/anilinux-terminal.git
   cd anilinux-terminal
   ```
 * Crea el comando global:
