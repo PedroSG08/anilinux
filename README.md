@@ -57,9 +57,6 @@ de **Python 3**: no hay dependencias, no hay Java, no hay emulador.
 
 ```bash
 anilinux                              # arrancar (busca el APK en ~/Descargas)
-anilinux --apk RUTA                   # importar el catálogo de un APK concreto
-anilinux --no-sync                    # saltar la sync incremental del arranque
-anilinux --bootstrap                  # reconstruir el catálogo desde el API
 ```
 
 Instalación del comando: se crea un symlink
