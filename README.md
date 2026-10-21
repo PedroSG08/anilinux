@@ -103,7 +103,7 @@ rm -rf ~/.local/share/anilinux-terminal ~/.config/anilinux-terminal
 ## Uso
 
 ```bash
-anilinux                              # arrancar (busca el APK en ~/Descargas)
+anilinux                              # arrancar
 ```
 
 Instalación del comando: se crea un symlink
