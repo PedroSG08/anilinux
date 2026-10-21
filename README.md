@@ -109,4 +109,5 @@ migran automáticamente al primer arranque si el destino no existe.
 * Las conversaciones con el servidor usan las mismas cabeceras y cuerpo
   JSON que la app (`{"e": correo, "p": contraseña}`, `{"n": nombre, …}`),
   de modo que la cuenta y las listas son **las mismas** que en el móvil.
+*Este programa no es original ni pretende serlo. Unicamente busca adaptar la aplicación kawaii animes a linux, con el fin de hacer accesible el contenido al mayor número de personas posible. Todo el crédito a: https://github.com/animelhd/kawaii-animes  
   
