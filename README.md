@@ -1,4 +1,4 @@
-# AniLinux Terminal — Kawaii Animes en tu terminal
+# AniLinux Terminal — Anime en tu terminal
 
 Cliente nativo para GNU/Linux de **Kawaii Animes**, reescrito desde cero a
 partir de la app Android (`app-release.apk`).  Solo usa la librería estándar
