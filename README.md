@@ -107,8 +107,9 @@ migran automáticamente al primer arranque si el destino no existe.
 
 ## Notas
 
-* El reproductor recomendado es `mpv` (`apt install mpv`); sin él, la TUI
+* Es necesario instalar el reproductor: `mpv` (`apt install mpv`); sin él, la TUI
   abre el enlace en el navegador por defecto.
 * Las conversaciones con el servidor usan las mismas cabeceras y cuerpo
   JSON que la app (`{"e": correo, "p": contraseña}`, `{"n": nombre, …}`),
   de modo que la cuenta y las listas son **las mismas** que en el móvil.
+  
