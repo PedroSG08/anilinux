@@ -53,6 +53,53 @@ de **Python 3**: no hay dependencias, no hay Java, no hay emulador.
   servidor.  El enlace se abre con `mpv` (si está instalado) o en el
   navegador (`xdg-open`); también puedes copiar la URL al portapapeles.
 
+  ## Instalación
+
+**Requisitos**
+
+* **Python 3.8+** (solo librería estándar: no hay dependencias).
+* **`mpv`** (probado con 0.41) para reproducir: `sudo apt install mpv`
+  (Arch: `pacman -S mpv`, Fedora: `dnf install mpv`).  Sin mpv la TUI funciona
+  igual, pero abre el enlace en el navegador por defecto.
+* **Terminal**: para ver el vídeo *dentro* de la terminal hace falta una con
+  protocolo de imágenes de kitty (kitty, ghostty, wezterm…).  En cualquier
+  otra, el vídeo se abre en una ventana a pantalla completa de mpv.
+
+**Pasos**
+
+* Clona el repositorio:
+  ```bash
+  git clone https://github.com/TU_USUARIO/anilinux-terminal.git
+  cd anilinux-terminal
+  ```
+* Crea el comando global:
+  ```bash
+  mkdir -p ~/.local/bin
+  ln -sf "$PWD/anilinux" ~/.local/bin/anilinux
+  ```
+  Si `~/.local/bin` no está en tu `PATH`, añádelo a tu shell:
+  ```bash
+  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+  source ~/.bashrc
+  ```
+* (Recomendado) guarda el APK de la app como `~/Descargas/app-release.apk`:
+  al primer arranque importa el catálogo completo (~2 300 animes,
+  ~36 000 episodios) en un segundo, sin conexión.  Sin APK también funciona,
+  pero el primer arranque reconstruye el catálogo completo desde el API
+  (puede tardar varios minutos).
+* Arranca y listo:
+  ```bash
+  anilinux
+  ```
+
+**Desinstalación**
+
+```bash
+rm ~/.local/bin/anilinux
+rm -rf ~/anilinux-terminal   # o la ruta donde lo hayas clonado
+rm -rf ~/.local/share/anilinux-terminal ~/.config/anilinux-terminal
+```
+
 ## Uso
 
 ```bash
