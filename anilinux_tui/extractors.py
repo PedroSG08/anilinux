@@ -310,13 +310,54 @@ _HOST_MAP = (
     (("byseraguci.com",), resolve_byse, "Delta"),
 )
 
+# Dominios señuelo que la v4 API entrega en `em` y que NO existen en DNS
+# público (verificados el 2026-11-02): el verdadero de cada servidor es el
+# canónico de abajo (todos ellos vivos y respondiendo).
+_POISON_HOSTS = ("byseragci.com", "biseraguci.com", "luluvdoq.com",
+                 "masukestn.com", "disabled.invalid")
+
+# Servidor (por nombre) → dominio real de la página de reproducción.
+CANONICAL_EMBEDS = {
+    "delta": "https://byseraguci.com/",
+    "epsilon": "https://luluvdoo.com/",
+    "alpha": "https://masukestin.com/",      # sin extractor (fallo amable)
+    "gamma": "https://johnfullwonder.com/",  # íd.
+}
+
+
+def canonical_embed(server_name, embed):
+    """Devuelve el dominio confiable para ese servidor.
+
+    Si `embed` apunta a un dominio señuelo (o no es una URL útil) y el
+    nombre del servidor es conocido, se sustituye por el canónico.  Para
+    servidores desconocidos se respeta el embed solo si es una URL."""
+    host = origin_of(embed or "").lower()
+    usable = bool(host) and not any(h in host for h in _POISON_HOSTS)
+    key = (server_name or "").strip().lower()
+    if key in CANONICAL_EMBEDS:
+        if not usable:
+            return CANONICAL_EMBEDS[key]
+        return embed or ""
+    # servidor desconocido: solo vale si embed es una URL real no señuelo
+    return embed if usable and (embed or "").strip() else ""
+
 
 def resolve(player):
     """Resuelva un player del catálogo → (url_m3u8, referer).
 
-    player: fila de players_for_episode (necesita `embed` y `link`).
+    player: fila de players_for_episode (necesita `embed`, `link` y
+    puede traer `server_name`).
     """
-    page = embed_page_url(player.get("embed"), player.get("link"))
+    link = (player.get("link") or "").strip()
+    if not link:
+        raise ResolveError("el servidor no entregó enlace")
+    if link.startswith("kp2:"):
+        # protocolo nuevo (app Android 13.7): tokens kp2 aún sin
+        # descodificador propio; el flujo clásico sigue disponible
+        raise ResolveError("el servidor publicó un token nuevo (kp2) que "
+                           "esta versión aún no reproduce")
+    embed = canonical_embed(player.get("server_name"), player.get("embed"))
+    page = embed_page_url(embed, link)
     host = origin_of(page).lower()
     for domains, fn, _label in _HOST_MAP:
         if any(d in host for d in domains):

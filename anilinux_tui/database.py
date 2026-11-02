@@ -103,6 +103,8 @@ ANIME_COLS = (
 BULK_TARGETS = ("server", "anime", "episode", "player")
 BULK_PAGE = 400
 
+from . import extractors
+
 SRC_UPSERT = {
     "server": "INSERT OR REPLACE INTO ServerEntity (id, name, position, embed, status) "
               "VALUES (?, ?, ?, ?, ?)",
@@ -138,10 +140,27 @@ class Catalog:
     def _ensure_schema(self):
         had = self._table_meta("bootstrap_done")
         self.con.executescript(SCHEMA)
+        self._repair_embeds()
         self.con.commit()
         if had is None and self.count_animes() == 0:
             # DB recién creada por el cliente: vale como catálogo descargable
             pass
+
+    def _repair_embeds(self):
+        """Repara dominios señuelo que versiones anteriores guardaron.
+
+        La v4 API llegó a entregar en `em` dominios que no existen en DNS
+        (byseragci.com, luluvdoq.com…); el real de cada servidor es el
+        canónico por nombre."""
+        try:
+            rows = self.con.execute("SELECT name, embed FROM ServerEntity").fetchall()
+        except sqlite3.Error:
+            return
+        for row in rows:
+            fixed = extractors.canonical_embed(row["name"], row["embed"])
+            if fixed and fixed != row["embed"]:
+                self.con.execute("UPDATE ServerEntity SET embed=? WHERE name=?",
+                                 (fixed, row["name"]))
 
     def _table_meta(self, key):
         try:
@@ -200,6 +219,77 @@ class Catalog:
         self.con.commit()
         return self.count_animes()
 
+    def import_from_apk_merge(self, apk_path):
+        """Fusiona el catálogo del APK con la BD actual, SIN tocar las
+        tablas de usuario (listas, progreso, descargas...).
+
+        * Servidores: se toman del APK pero con dominio canónico (el APK
+          nuevo los lleva ofuscados como kce1…; el real sale por nombre).
+        * Animes/episodios: INSERT OR REPLACE (contenido de catálogo).
+        * Players: INSERT OR IGNORE para no pisar los tokens viejos,
+          que siguen operativos (los kp2 del APK aún no se reproduzcan).
+        """
+        target = None
+        with zipfile.ZipFile(apk_path) as zf:
+            for n in zf.namelist():
+                if n.endswith("kawaii_animes.db") or \
+                        (n.endswith(".db") and n.startswith("assets/")):
+                    target = n
+                    break
+            if not target:
+                raise FileNotFoundError("El APK no contiene base de datos.")
+            tmp = self.path + ".apkmerge"
+            with zf.open(target) as src, open(tmp, "wb") as dst:
+                while True:
+                    chunk = src.read(1 << 20)
+                    if not chunk:
+                        break
+                    dst.write(chunk)
+        added = 0
+        try:
+            self.con.execute("ATTACH DATABASE ? AS apkmerge", (tmp,))
+            for r in self.con.execute(
+                    "SELECT id, name, position, embed, status "
+                    "FROM apkmerge.ServerEntity"):
+                self.con.execute(
+                    "INSERT OR REPLACE INTO ServerEntity "
+                    "(id, name, position, embed, status) VALUES (?,?,?,?,?)",
+                    (r["id"], r["name"], r["position"],
+                     extractors.canonical_embed(r["name"], r["embed"]),
+                     r["status"]))
+            self.con.execute(
+                "INSERT OR REPLACE INTO AnimeEntity "
+                "(id, name, name_alternative, poster, banner, overview, "
+                "aired, type, status, genres, rating, vote_average, season, "
+                "broadcast, prequel, sequel, related, views, updated_at) "
+                "SELECT id, name, name_alternative, poster, banner, "
+                "overview, aired, type, status, genres, rating, "
+                "vote_average, season, broadcast, prequel, sequel, related, "
+                "views, updated_at FROM apkmerge.AnimeEntity")
+            self.con.execute(
+                "INSERT OR REPLACE INTO EpisodeEntity "
+                "(id, number, anime_id, created_at, ad_rewarded) "
+                "SELECT id, number, anime_id, created_at, 0 "
+                "FROM apkmerge.EpisodeEntity")
+            before = self.count_players()
+            self.con.execute(
+                "INSERT OR IGNORE INTO PlayerEntity "
+                "(id, link, language, server_id, episode_id, updated_at) "
+                "SELECT id, link, language, server_id, episode_id, updated_at "
+                "FROM apkmerge.PlayerEntity")
+            self.con.commit()
+            added = self.count_players() - before
+            return added, self.count_animes(), self.count_players()
+        finally:
+            try:
+                self.con.execute("DETACH DATABASE apkmerge")
+            except sqlite3.Error:
+                pass
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
     # ------------------------------------------------------------------ #
     # catálogo completo desde el API (fallback si no hay APK)
     # ------------------------------------------------------------------ #
@@ -249,8 +339,9 @@ class Catalog:
 
     @staticmethod
     def _server_row(d):
-        return (d.get("id"), d.get("n", ""), int(d.get("po", 0) or 0),
-                d.get("em"), d.get("st"))
+        name = d.get("n", "")
+        return (d.get("id"), name, int(d.get("po", 0) or 0),
+                extractors.canonical_embed(name, d.get("em", "")), d.get("st"))
 
     def _upsert(self, target, rows):
         if not rows:

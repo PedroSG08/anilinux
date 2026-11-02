@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Configuración y rutas de AniLinux Terminal."""
+import glob
 import json
 import os
 import sys
@@ -59,14 +60,22 @@ def ensure_dirs():
     os.makedirs(CONFIG_DIR, exist_ok=True)
 
 def find_apk():
-    """Busca el APK en rutas habituales o en las variables ANILINUX_APK / KAWAII_APK."""
+    """Busca el APK en rutas habituales o en las variables ANILINUX_APK / KAWAII_APK.
+
+    Si hay varios (app-release.apk, app-release(1).apk...) gana el más
+    nuevo por fecha de modificación: cubre descargas actualizadas."""
     env = _env("ANILINUX_APK", "KAWAII_APK")
-    cands = [env] if env else []
-    cands.extend(CANDIDATE_APKS)
-    for c in cands:
+    if env and os.path.isfile(env):
+        return env            # elección explícita del usuario
+    hits = []
+    for c in list(CANDIDATE_APKS):
         if c and os.path.isfile(c):
-            return c
-    return None
+            hits.append(os.path.realpath(c))
+    for folder in (_home("Descargas"), _home("Downloads")):
+        hits.extend(glob.glob(os.path.join(folder, "app-release*.apk")))
+    hits = sorted(set(hits),
+                  key=lambda p: os.path.getmtime(p), reverse=True)
+    return hits[0] if hits else None
 
 # --- Preferencias -------------------------------------------------------
 DEFAULT_SETTINGS = {

@@ -50,8 +50,8 @@ def main(argv=None):
 
     db = Catalog(config.DB_PATH)
     try:
+        apk = args.apk or config.find_apk()
         if db.count_animes() == 0:
-            apk = args.apk or config.find_apk()
             if apk:
                 log(f"[catálogo] Importando catálogo desde el APK: {apk}")
                 try:
@@ -73,6 +73,27 @@ def main(argv=None):
                     log("            Primer arranque necesita conexión o un APK "
                         "con catálogo (usa --apk).")
                     return 1
+
+        if apk and os.path.isfile(apk):
+            # catálogo nuevo en un APK distinto del ya fusionado: fusiona
+            # sin borrar listas/progreso (ImportFromApkApiMergeDatabase)
+            try:
+                sig = "%s:%d:%d" % (apk, os.path.getmtime(apk),
+                                    os.path.getsize(apk))
+            except OSError:
+                sig = apk
+            if sig != db.get_meta("apk_sig") and db.count_animes() > 0:
+                log(f"[catálogo] Fusionando catálogo nuevo del APK: {apk}")
+                try:
+                    players, animes, total = db.import_from_apk_merge(apk)
+                    db.set_meta("apk_sig", sig)
+                    db._repair_embeds()
+                    db.con.commit()
+                    log(f"[catálogo] Fusión aplicada: {animes} animes, "
+                        f"{total} players ({players} nuevos).")
+                except (FileNotFoundError, OSError, zipfile.BadZipFile,
+                        KeyError) as exc:
+                    log(f"[catálogo] No se pudo fusionar el APK: {exc}")
 
         if not args.no_sync and not rebuilt:
             try:
