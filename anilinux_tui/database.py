@@ -597,6 +597,29 @@ class Catalog:
             "FROM WatchProgressEntity p INNER JOIN AnimeEntity a ON a.id = p.anime_id "
             "WHERE p.user_id = ? ORDER BY p.updated_at DESC LIMIT ?", (int(user_id), limit))
 
+    def continue_rows(self, user_id, limit=80, min_position_ms=20000):
+        """Capítulos empezados y no terminados, del más reciente al más antiguo.
+
+        Se excluyen los que ya están al 95 % o a menos de 15 s del final,
+        aunque el servidor todavía los tenga como no completados."""
+        return self._rows(
+            "SELECT p.anime_id, p.episode_id, p.episode_number, p.position_ms, "
+            "p.duration_ms, p.completed, p.updated_at, "
+            "a.name AS anime_name, a.type AS anime_type "
+            "FROM WatchProgressEntity p "
+            "INNER JOIN AnimeEntity a ON a.id = p.anime_id "
+            "WHERE p.user_id = ? AND p.completed = 0 AND p.position_ms > ? "
+            "AND (p.duration_ms <= 0 OR p.position_ms < p.duration_ms - 15000) "
+            "ORDER BY p.updated_at DESC, p.episode_id DESC LIMIT ?",
+            (int(user_id), int(min_position_ms), int(limit)))
+
+    def progress_for_episode(self, user_id, episode_id):
+        row = self.con.execute(
+            "SELECT * FROM WatchProgressEntity "
+            "WHERE user_id = ? AND episode_id = ?",
+            (int(user_id), int(episode_id))).fetchone()
+        return dict(row) if row else None
+
     def recent_episode_of_anime(self, user_id, anime_id):
         row = self.con.execute(
             "SELECT * FROM WatchProgressEntity WHERE user_id = ? AND anime_id = ? "

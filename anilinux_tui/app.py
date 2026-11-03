@@ -36,10 +36,12 @@ def _visible_window(text, cursor, width):
 
 class App:
     SECTIONS = (
-        "inicio", "explorar", "generos", "buscar", "calendario", "perfil", "ajustes",
+        "inicio", "continuar", "explorar", "generos", "buscar", "calendario",
+        "perfil", "ajustes",
     )
     SECTION_LABELS = (
-        "Inicio", "Explorar", "Géneros", "Buscar", "Calendario", "Perfil", "Ajustes",
+        "Inicio", "Continuar", "Explorar", "Géneros", "Buscar", "Calendario",
+        "Perfil", "Ajustes",
     )
 
     def __init__(self, api_ref, db, session, settings):
@@ -343,6 +345,7 @@ class App:
     def run_section(self, name):
         handlers = {
             "inicio": self.scr_inicio,
+            "continuar": self.scr_continuar,
             "explorar": self.scr_explorar,
             "generos": self.scr_generos,
             "buscar": self.scr_buscar,
@@ -379,7 +382,7 @@ class App:
                 sel = (sel + 1) % len(items)
             elif key in ("enter", "right"):
                 if sel == 0:
-                    self.list_continue()
+                    self.scr_continuar()
                 elif sel == 1:
                     self.list_screen("Novedades", self.db.new_animes())
                 elif sel == 2:
@@ -825,22 +828,26 @@ class App:
                 ep = episodes[sel]
                 self.episode_flow(anime, ep)
 
-    def episode_flow(self, anime, ep):
-        """Idioma → reproducción automática (sin más menús)."""
+    def episode_flow(self, anime, ep, start_ms=0):
+        """Idioma → reproducción automática (sin más menús).
+
+        start_ms > 0 reanuda el capítulo en esa posición (pestaña Continuar)."""
         langs = self.db.languages_for_episode(ep["id"])
         if not langs:
             self.alert("No hay servidores disponibles para este episodio.",
                        title="Reproducir")
             return
         if len(langs) == 1:
-            self.play_episode(anime, ep, langs[0])
+            self.play_episode(anime, ep, langs[0], start_ms=start_ms)
             return
         items = [(config.LANGUAGE_LABELS.get(str(l), f"Idioma {l}"), None)
                  for l in langs] + [("Volver", C.FG_DIM)]
+        title = f"Ep {ep['number']} · Elegir idioma"
+        if start_ms and start_ms > 1000:
+            title += " · reanudar en " + self._fmt_time(start_ms / 1000.0)
         sel = 0
         while True:
-            y, x, h, w = self.draw_base(
-                None, f"Ep {ep['number']} · Elegir idioma", HINT_BACK)
+            y, x, h, w = self.draw_base(None, title, HINT_BACK)
             self.menu(y + 1, x + 2, len(items), w - 4, items, sel, 0)
             key = tui.read_key()
             if key == "up":
@@ -850,12 +857,12 @@ class App:
             elif key in ("enter", "right"):
                 if sel == len(items) - 1:
                     return
-                self.play_episode(anime, ep, langs[sel])
+                self.play_episode(anime, ep, langs[sel], start_ms=start_ms)
                 return
             elif key in ("esc", "left", "q"):
                 return
 
-    def play_episode(self, anime, ep, lang):
+    def play_episode(self, anime, ep, lang, start_ms=0):
         """Reproducción única: prueba los servidores del idioma en orden y
         abre el primero que funcione, con mpv dentro de esta misma ventana."""
         players = [p for p in self.db.players_for_episode(ep["id"])
@@ -877,7 +884,8 @@ class App:
                 errors.append(f"{srv}: {err}")
                 continue
             url, referer = res
-            self.play_in_window(url, referer, anime, ep, lang)
+            self.play_in_window(url, referer, anime, ep, lang,
+                                start_ms=start_ms)
             return
         self.alert("No se pudo reproducir en ningún servidor:\n\n" +
                    "\n".join(errors[:5]) +
@@ -895,7 +903,7 @@ class App:
                        C.RESET)
         self.scr.flush()
 
-    def play_in_window(self, url, referer, anime, ep, lang):
+    def play_in_window(self, url, referer, anime, ep, lang, start_ms=0):
         """Reproduce el episodio con mpv buscando la mejor calidad.
 
         1. En kitty: vídeo dibujado en esta terminal (--vo=kitty, nítido),
@@ -907,8 +915,26 @@ class App:
         Siempre la máxima calidad de HLS disponible (mejor resolución).
 
         En kitty y tct mpv dibuja SOBRE la pantalla alterna de la TUI (no
-        salta a la principal), para no perder la pantalla del usuario."""
+        salta a la principal), para no perder la pantalla del usuario.
+
+        start_ms reanuda en esa posición (pestaña Continuar). Mientras se
+        reproduce se guarda el progreso cada ~5 s; solo se marca como visto
+        si de verdad se llega al final."""
         self.flash_msg = None
+        resume_s = max(0.0, float(start_ms or 0) / 1000.0)
+        state = {"pos": resume_s, "dur": 0.0, "saved": time.time()}
+
+        def on_progress(elapsed, duration):
+            if elapsed is not None and elapsed >= 0:
+                state["pos"] = float(elapsed)
+            if duration is not None and duration > 0:
+                state["dur"] = float(duration)
+            now = time.time()
+            if now - state["saved"] >= 5.0 and state["pos"] >= 1.0:
+                state["saved"] = now
+                self._save_playback_progress(
+                    anime, ep, state["pos"] * 1000.0, state["dur"] * 1000.0)
+
         # vecinos de la lista de capítulos (mismo orden que la pantalla)
         prev_ep = next_ep = None
         try:
@@ -926,8 +952,9 @@ class App:
         in_alt = via in ("kitty", "tct")
         if in_alt:
             try:
-                rc, act = self._run_mpv(url, referer, prev_ep, next_ep,
-                                        title)
+                rc, act, pos, dur = self._run_mpv(
+                    url, referer, prev_ep, next_ep, title,
+                    start_ms=start_ms, progress_cb=on_progress)
             finally:
                 # limpia restos de vídeo en la pantalla de la TUI
                 self.scr.write("\x1b[?25l\x1b[2J\x1b[H")
@@ -935,23 +962,53 @@ class App:
         else:
             self.scr.leave()      # ventana propia de mpv: terminal libre
             try:
-                rc, act = self._run_mpv(url, referer, prev_ep, next_ep,
-                                        title)
+                rc, act, pos, dur = self._run_mpv(
+                    url, referer, prev_ep, next_ep, title,
+                    start_ms=start_ms, progress_cb=on_progress)
             finally:
                 self.scr.enter()
+
+        # posición/duración definitivas (aunque mpv saliera de golpe)
+        if pos is not None and pos >= 0:
+            state["pos"] = float(pos)
+        if dur is not None and dur > 0:
+            state["dur"] = float(dur)
+        pos_ms = max(0, int(round(state["pos"] * 1000.0)))
+        dur_ms = max(0, int(round(state["dur"] * 1000.0)))
+        finished = (dur_ms > 0 and
+                    (pos_ms >= dur_ms * 95 // 100 or
+                     pos_ms >= dur_ms - 15000))
+
         if act == "next" and next_ep:
+            if finished:
+                self.mark_episode_viewed(anime, ep, pos_ms, dur_ms)
+            else:
+                self._save_playback_progress(anime, ep, pos_ms, dur_ms)
             self.play_episode(anime, next_ep, lang)
             return
         if act == "prev" and prev_ep:
+            if finished:
+                self.mark_episode_viewed(anime, ep, pos_ms, dur_ms)
+            else:
+                self._save_playback_progress(anime, ep, pos_ms, dur_ms)
             self.play_episode(anime, prev_ep, lang)
             return
         if act == "back":
+            if finished:
+                self.mark_episode_viewed(anime, ep, pos_ms, dur_ms)
+            else:
+                self._save_playback_progress(anime, ep, pos_ms, dur_ms)
             self.flash("Lista de capítulos.", "info")
             return
-        if rc == 0:
-            self.mark_episode_viewed(anime, ep)
+        if finished:
+            self.mark_episode_viewed(anime, ep, pos_ms, dur_ms)
             self.flash("Reproducción finalizada.", "info")
+        elif rc == 0:
+            self._save_playback_progress(anime, ep, pos_ms, dur_ms)
+            self.flash("Progreso guardado. Puedes continuar cuando quieras.",
+                       "info")
         else:
+            self._save_playback_progress(anime, ep, pos_ms, dur_ms)
             self.alert(f"mpv terminó con error (código {rc}).\n\n"
                        "El enlace puede haber caducado; vuelve a intentarlo.",
                        title="Reproducir")
@@ -1343,15 +1400,20 @@ class App:
             pass                 # best-effort: sin compositor no pasa nada
         return None
 
-    def _run_mpv(self, url, referer, prev_ep=None, next_ep=None, title=""):
+    def _run_mpv(self, url, referer, prev_ep=None, next_ep=None, title="",
+                 start_ms=0, progress_cb=None):
         """Lanza mpv, dibuja la mini-UI y despacha teclado/ratón por IPC.
 
-        Devuelve (rc, acción): acción None (salida normal), "prev"/"next"
-        (capítulo pedido con las teclas p/n) o "back" (volver a la lista).
+        Devuelve (rc, acción, posición_s, duración_s): acción None (salida
+        normal), "prev"/"next" (capítulo pedido con las teclas p/n) o "back"
+        (volver a la lista).
 
         - mpv con --input-terminal=no: no consume el teclado (q/Esc sale;
           espacio pausa; ←/→ salto; ↑/↓ volumen; m silencio; n/p capítulo
           siguiente/anterior; b lista de capítulos).
+        - start_ms > 0 añade --start a mpv para reanudar en esa posición.
+        - progress_cb(posición_s, duración_s) se llama al recibir el estado
+          de mpv, para guardar el progreso periódicamente.
         - En kitty: mini-UI sobre las bandas negras (barra de progreso con
           tiempos + botones), refrescada por IPC (time-pos/duration/pause)
           y con clics de ratón (SGR 1006: bandas para buscar, botones para
@@ -1373,7 +1435,10 @@ class App:
                     "--hls-bitrate=max", "--msg-level=all=error",
                     "--input-terminal=no", "--input-ipc-server=" + ipc_path,
                     "--referrer=" + (referer or ""),
-                    "--user-agent=" + extractors.IOS_UA, url]
+                    "--user-agent=" + extractors.IOS_UA]
+        if start_ms and int(start_ms) > 1000:
+            argv.append("--start=%.3f" % (float(start_ms) / 1000.0))
+        argv.append(url)
         try:
             os.unlink(ipc_path)
         except OSError:
@@ -1416,7 +1481,7 @@ class App:
                 proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL)
             except FileNotFoundError:
                 self.alert("mpv no está instalado.", title="mpv")
-                return 200, None
+                return 200, None, 0.0, 0.0
             deadline = time.time() + 5.0
             while time.time() < deadline:
                 try:
@@ -1429,7 +1494,7 @@ class App:
                     time.sleep(0.08)
             if sock is None:
                 proc.terminate()
-                return (proc.returncode or 255), None
+                return (proc.returncode or 255), None, 0.0, 0.0
             sock.setblocking(False)
             poll_t = 0.0
             while proc.poll() is None:
@@ -1474,6 +1539,13 @@ class App:
                             elif name == "pause" and \
                                     isinstance(data, bool):
                                 paused = data
+
+                # ---------- guardado periódico del progreso ----------
+                if progress_cb is not None and elapsed >= 0:
+                    try:
+                        progress_cb(elapsed, duration)
+                    except Exception:
+                        progress_cb = None
 
                 # ---------- sondeo IPC + ratón ----------
                 if now >= poll_t:
@@ -1674,7 +1746,7 @@ class App:
                 pass
             if go_full:
                 self._hypr_fullscreen(False, entered_fs is True)
-        return rc, act
+        return rc, act, elapsed, duration
 
     @staticmethod
     def _ipc_send(sock, command, rid=None):
@@ -1698,17 +1770,39 @@ class App:
         m, s = divmod(rem, 60)
         return "%d:%02d:%02d" % (h, m, s) if h else "%d:%02d" % (m, s)
 
-    def mark_episode_viewed(self, anime, ep):
+    def _save_playback_progress(self, anime, ep, position_ms, duration_ms):
+        """Guarda un avance parcial (para la pestaña Continuar)."""
         uid = self.session.user_id
+        pos = max(0, int(position_ms or 0))
+        dur = max(0, int(duration_ms or 0))
+        if pos < 1000:          # abrir y cerrar sin ver nada no ensucia
+            return
+        if dur <= 0:            # mpv aún no sabía la duración: consérvala
+            prev = self.db.progress_for_episode(uid, ep["id"]) or {}
+            dur = int(prev.get("duration_ms") or 0)
+        self.db.put_progress(uid, ep["id"], anime["id"], ep["number"],
+                             pos, dur, completed=False)
+
+    def mark_episode_viewed(self, anime, ep, position_ms=None,
+                            duration_ms=None):
+        uid = self.session.user_id
+        if position_ms is None or duration_ms is None:
+            prev = self.db.progress_for_episode(uid, ep["id"]) or {}
+            if position_ms is None:
+                position_ms = int(prev.get("position_ms") or 0)
+            if duration_ms is None:
+                duration_ms = int(prev.get("duration_ms") or 0)
         self.db.mark_episode_viewed(uid, ep["id"], anime["id"])
-        self.db.put_progress(uid, ep["id"], anime["id"], ep["number"], completed=True)
+        self.db.put_progress(uid, ep["id"], anime["id"], ep["number"],
+                             position_ms, duration_ms, completed=True)
         if self.session.token:
             now = time.strftime("%Y-%m-%d %H:%M:%S")
             ok = False
             try:
                 self.api.add_view(self.session.token, anime["id"])
                 self.api.update_progress(self.session.token, ep["id"], anime["id"],
-                                         ep["number"], 0, 0, True, now)
+                                         ep["number"], position_ms, duration_ms,
+                                         True, now)
                 ok = True
             except (ApiError, NetworkError) as exc:
                 self.flash(f"Cambio local hecho; servidor sin confirmar ({exc})", "warn")
@@ -1766,21 +1860,40 @@ class App:
                       "anime_id": r["anime_id"]}
                 self.episode_flow(anime, ep)
 
-    def list_continue(self):
+    def _continue_label(self, row):
+        """Fila de la pestaña Continuar: anime, capítulo y avance."""
+        name = row.get("anime_name") or "?"
+        ep = row.get("episode_number")
+        ep = "?" if ep is None else str(ep)
+        pos = max(0, int(row.get("position_ms") or 0))
+        dur = max(0, int(row.get("duration_ms") or 0))
+        if dur > 0:
+            pct = max(0, min(100, int(pos * 100 / dur)))
+            filled = max(0, min(10, pct // 10))
+            bar = "▰" * filled + "▱" * (10 - filled)
+            left = self._fmt_time((dur - pos) / 1000.0)
+            return "%s — Ep %s  %s %3d%% · quedan %s" % (
+                name, ep, bar, pct, left)
+        return "%s — Ep %s  %s vistos" % (
+            name, ep, self._fmt_time(pos / 1000.0))
+
+    def scr_continuar(self):
+        """Capítulos a medias, listos para reanudar en su última posición."""
         uid = self.session.user_id
-        rows = self.db.progress_rows(uid)
+        rows = self.db.continue_rows(uid)
         if not rows:
-            self.alert('Todavía no hay progreso. Empieza por «Novedades» y '
-                       'marca episodios como vistos.', title="Continuar viendo")
+            self.alert("No hay capítulos a medias.\n\n"
+                       "Cuando dejes un episodio sin terminar aparecerá aquí "
+                       "para reanudarlo en el mismo punto.",
+                       title="Continuar viendo")
             return
-        items = []
-        for r in rows:
-            nxt = r["episode_number"] + (1 if r["completed"] else 0)
-            items.append((f"{r['anime_name']} — Ep {nxt}", None))
-        items.append(("Volver", C.FG_DIM))
         sel, offset = 0, 0
         while True:
-            y, x, h, w = self.draw_base(None, "Continuar viendo", HINT_BACK)
+            y, x, h, w = self.draw_base(
+                "continuar", "Continuar viendo",
+                HINT_BACK + " · Enter reanuda")
+            items = [(self._continue_label(r), None) for r in rows]
+            items.append(("Volver", C.FG_DIM))
             count = min(h - 1, len(items))
             self.menu(y, x + 1, count, w - 3, items, sel, offset)
             key = tui.read_key()
@@ -1788,14 +1901,41 @@ class App:
                 sel = (sel - 1) % len(items)
             elif key == "down":
                 sel = (sel + 1) % len(items)
+            elif key == "pgup":
+                sel = max(0, sel - count)
+            elif key == "pgdn":
+                sel = min(len(items) - 1, sel + count)
             elif key in ("esc", "left", "q"):
                 return
             elif key in ("enter", "right"):
-                if sel == len(rows):
+                if sel >= len(rows):
                     return
-                anime = self.db.anime_by_id(rows[sel]["anime_id"])
-                if anime:
-                    self.anime_detail(anime)
+                row = rows[sel]
+                anime = self.db.anime_by_id(row["anime_id"])
+                if not anime:
+                    self.flash("Ese anime ya no está en el catálogo.", "warn")
+                    rows = self.db.continue_rows(uid)
+                    if not rows:
+                        return
+                    sel = min(sel, len(rows) - 1)
+                    continue
+                ep = {"id": row["episode_id"],
+                      "number": row["episode_number"],
+                      "anime_id": row["anime_id"]}
+                start_ms = max(0, int(row.get("position_ms") or 0))
+                self.episode_flow(anime, ep, start_ms=start_ms)
+
+                # al volver, refresca: el capítulo puede haber terminado
+                rows = self.db.continue_rows(uid)
+                if not rows:
+                    self.flash("No quedan capítulos a medias.", "info")
+                    return
+                for i, r in enumerate(rows):
+                    if r["episode_id"] == ep["id"]:
+                        sel = i
+                        break
+                else:
+                    sel = min(sel, len(rows) - 1)
 
     # ================================================================= #
     # PERFIL
