@@ -6,16 +6,17 @@ de **Python 3**: no hay dependencias, no hay Java, no hay emulador.
 
 ```
 ╭── ANILINUX TERMINAL ──────────────────────────────────────────────────────╮
-│ Cuenta: Invitado · 2325 animes · 36490 episodios · 4 servidores      │
-│ CONTENIDOS  │ Elige la sección con ↑↓ y ábrela con Enter o →         │
-│ ‹ Inicio    │                                                        │
-│ › Explorar  │                                                          │
-│ › Géneros   │ …                                                        │
-│ › Buscar    │                                                          │
-│ › Calendario│                                                          │
-│ › Perfil    │                                                          │
-│ › Ajustes   │                                                          │
-╰───────────────────────────────────────────────────────────────────────╯
+│ Cuenta: Invitado · 2387 animes · 36970 episodios · 4 servidores           │
+│ CONTENIDOS  │ Elige la sección con ↑↓ y ábrela con Enter o →              │
+│ ‹ Inicio    │                                                             │
+│ › Continuar │                                                             │
+│ › Explorar  │ …                                                           │
+│ › Géneros   │                                                             │
+│ › Buscar    │                                                             │
+│ › Calendario│                                                             │
+│ › Perfil    │                                                             │
+│ › Ajustes   │                                                             │
+╰───────────────────────────────────────────────────────────────────────────╯
  ↑↓ mover · Enter/→ abrir · q salir
 ```
 
@@ -26,6 +27,9 @@ de **Python 3**: no hay dependencias, no hay Java, no hay emulador.
 * **Secciones** equivalentes a la app Android:
   - **Inicio** — Continuar viendo, Novedades, Últimos episodios, Populares,
     Mejor valorados, En emisión, Películas, Audio latino, Audio castellano.
+  - **Continuar** — capítulos empezados y no terminados, ordenados por
+    actividad reciente.  Muestra barra de progreso y tiempo restante; Enter
+    reanuda en la posición guardada.
   - **Explorar** — Todos, En emisión, Finalizados, Películas, OVA, ONA,
     Especiales, Populares, Mejor valorados…
   - **Géneros** — lista completa de géneros con recuento.
@@ -33,9 +37,12 @@ de **Python 3**: no hay dependencias, no hay Java, no hay emulador.
   - **Calendario** — emisiones por día de la semana.
   - **Perfil** — tu cuenta.
   - **Ajustes** — sincronización, reproductor, estado del catálogo.
+* **Progreso persistente**: el avance se guarda cada ~5 s.  Al dejar un
+  capítulo a medias aparece en Continuar; solo se marca como visto al llegar
+  al 95 % o a menos de 15 s del final.
 * **Catálogo offline completo**: al primer arranque importa la base de
   datos `assets/databases/kawaii_animes.db` incluida dentro del propio
-  APK (~2 300 animes, ~36 000 episodios, ~105 000 enlaces).  Si no hay
+  APK (~2 400 animes, ~37 000 episodios, ~160 000 enlaces).  Si no hay
   APK, reconstruye el catálogo completo desde el API paginando
   `POST /bulk-sync` (`server` → `anime` → `episode` → `player`).
 * **Sincronización incremental** con `POST /sync` usando los cursores
@@ -49,28 +56,32 @@ de **Python 3**: no hay dependencias, no hay Java, no hay emulador.
   - `GET /auth/lists/all` baja favoritos/viendo/ver más tarde/vistos y
     progreso; los cambios locales se suben con `/auth/…/add|remove` y
     `/auth/progress/update`, igual que hace la app.
-* **Reproducción**: elige anime → episodio → idioma (Sub/Lat/Cas) →
-  servidor.  El enlace se abre con `mpv` (si está instalado) o en el
-  navegador (`xdg-open`); también puedes copiar la URL al portapapeles.
+* **Reproducción**: elige anime → episodio; si hay varios idiomas, elige
+  Sub/Lat/Cas.  La TUI prueba los servidores en orden y abre el primero que
+  funcione con `mpv`.  En kitty el vídeo se dibuja dentro de la terminal; en
+  el resto de terminales se abre una ventana de mpv a pantalla completa.
+  Teclas: espacio pausa, ←/→ salta, ↑/↓ volumen, `m` silencio, `n`/`p`
+  siguiente/anterior, `b` vuelve a la lista de capítulos y `q`/Esc sale.
 
-  ## Instalación
+## Instalación
 
 **Requisitos**
 
 * **Python 3.8+** (solo librería estándar: no hay dependencias).
 * **`mpv`** (probado con 0.41) para reproducir: `sudo apt install mpv`
-  (Arch: `pacman -S mpv`, Fedora: `dnf install mpv`).  Sin mpv la TUI funciona
-  igual, pero abre el enlace en el navegador por defecto.
+  (Arch: `pacman -S mpv`, Fedora: `dnf install mpv`).  Sin mpv la TUI
+  permite navegar por el catálogo, pero no reproducir.
 * **Terminal**: para ver el vídeo *dentro* de la terminal hace falta una con
-  protocolo de imágenes de kitty (kitty, ghostty, wezterm…).  En cualquier
-  otra, el vídeo se abre en una ventana a pantalla completa de mpv.
+  protocolo de imágenes de kitty (kitty, ghostty, wezterm…).  En el resto se
+  abre una ventana de mpv a pantalla completa (o modo texto si no hay
+  entorno gráfico).
 
 **Pasos**
 
 * Clona el repositorio:
   ```bash
-  git clone https://github.com/PedroSG08/anilinux-terminal.git
-  cd anilinux-terminal
+  git clone https://github.com/PedroSG08/anilinux.git
+  cd anilinux
   ```
 * Crea el comando global:
   ```bash
@@ -83,8 +94,8 @@ de **Python 3**: no hay dependencias, no hay Java, no hay emulador.
   source ~/.bashrc
   ```
 * (Recomendado) guarda el APK de la app como `~/Descargas/app-release.apk`:
-  al primer arranque importa el catálogo completo (~2 300 animes,
-  ~36 000 episodios) en un segundo, sin conexión.  Sin APK también funciona,
+  al primer arranque importa el catálogo completo (~2 400 animes,
+  ~37 000 episodios) en un segundo, sin conexión.  Sin APK también funciona,
   pero el primer arranque reconstruye el catálogo completo desde el API
   (puede tardar varios minutos).
 * Arranca y listo:
@@ -96,7 +107,7 @@ de **Python 3**: no hay dependencias, no hay Java, no hay emulador.
 
 ```bash
 rm ~/.local/bin/anilinux
-rm -rf ~/anilinux-terminal   # o la ruta donde lo hayas clonado
+rm -rf ~/anilinux   # o la ruta donde lo hayas clonado
 rm -rf ~/.local/share/anilinux-terminal ~/.config/anilinux-terminal
 ```
 
@@ -107,15 +118,15 @@ anilinux                              # arrancar
 ```
 
 Instalación del comando: se crea un symlink
-`~/.local/bin/anilinux → ~/anilinux-terminal/anilinux`.  Si el `~/.local/bin`
+`~/.local/bin/anilinux → ~/anilinux/anilinux`.  Si el `~/.local/bin`
 no está en tu PATH, el `.bashrc` instalado lo añade automáticamente; si
 mueves el proyecto a otra ruta, recrea el symlink con
 `ln -sf RUTA/nueva/anilinux ~/.local/bin/anilinux`.
 
 Si prefieres, instala a mano el catálogo sin TUI interactiva:
 
-```python3
-python3 -c "import sys; sys.path.insert(0,'/home/pedro/anilinux-terminal'); \
+```bash
+python3 -c "import sys; sys.path.insert(0,'$HOME/anilinux'); \
 from anilinux_tui.database import Catalog; \
 d=Catalog('$HOME/.local/share/anilinux-terminal/catalog.db'); \
 print(d.import_from_apk('$HOME/Descargas/app-release.apk'))"
@@ -124,7 +135,7 @@ print(d.import_from_apk('$HOME/Descargas/app-release.apk'))"
 ## Estructura del proyecto
 
 ```
-anilinux-terminal/
+anilinux/
 ├── anilinux                  # lanzador ejecutable (además disponible como comando global `anilinux`)
 └── anilinux_tui/
     ├── main.py             # arranque, importación de catálogo, sync inicial
@@ -152,7 +163,7 @@ migran automáticamente al primer arranque si el destino no existe.
 ## Notas
 
 * Es necesario instalar el reproductor: `mpv` (`apt install mpv`); sin él, la TUI
-  abre el enlace en el navegador por defecto.
+  permite navegar por el catálogo, pero no reproducir.
 * Las conversaciones con el servidor usan las mismas cabeceras y cuerpo
   JSON que la app (`{"e": correo, "p": contraseña}`, `{"n": nombre, …}`),
   de modo que la cuenta y las listas son **las mismas** que en el móvil.
