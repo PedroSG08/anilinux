@@ -138,13 +138,9 @@ class Catalog:
     # infraestructura
     # ------------------------------------------------------------------ #
     def _ensure_schema(self):
-        had = self._table_meta("bootstrap_done")
         self.con.executescript(SCHEMA)
         self._repair_embeds()
         self.con.commit()
-        if had is None and self.count_animes() == 0:
-            # DB recién creada por el cliente: vale como catálogo descargable
-            pass
 
     def _repair_embeds(self):
         """Repara dominios señuelo que versiones anteriores guardaron.
@@ -294,28 +290,31 @@ class Catalog:
     # catálogo completo desde el API (fallback si no hay APK)
     # ------------------------------------------------------------------ #
     def bootstrap_from_api(self, api_ref, progress=None):
-        """Descarga el catálogo completo paginando POST /bulk-sync."""
-        cursor = 0
+        """Descarga el catálogo completo paginando POST /bulk-sync.
+
+        Devuelve el número de animes del catálogo resultante.  Solo marca
+        `bootstrap_done` cuando hay animes: el API v4 actual devuelve
+        `a/e/p` vacíos, así que un resultado vacío no debe darse por bueno.
+        """
         for target in BULK_TARGETS:
             last_id = 0
-            while True:
+            guard = 0
+            while guard < 1000:
+                guard += 1
                 resp = api_ref.bulk_sync(target, last_id, BULK_PAGE)
                 self.apply_sync_payload(resp)
                 new_last = int(resp.get("li", last_id) or last_id)
                 has_more = bool(resp.get("hm"))
-                # li es el id máximo del paquete; avanza la paginación
-                if target == "server":
-                    last_id = new_last
-                elif not has_more and new_last <= last_id:
-                    last_id = new_last
-                else:
-                    last_id = new_last
                 if progress:
-                    progress(target, last_id)
-                if not has_more:
+                    progress(target, new_last)
+                # Sin más páginas o sin avance de cursor: no insistir.
+                if not has_more or new_last <= last_id:
                     break
-            cursor = max(cursor, 0)
-        self.set_meta("bootstrap_done", "1")
+                last_id = new_last
+        total = self.count_animes()
+        if total > 0:
+            self.set_meta("bootstrap_done", "1")
+        return total
 
     # ------------------------------------------------------------------ #
     # aplicación de paquetes de sincronización
@@ -411,6 +410,15 @@ class Catalog:
 
     def count_servers(self):
         return int(self._scalar("SELECT COUNT(*) FROM ServerEntity") or 0)
+
+    def has_user_data(self):
+        """True si hay listas, progreso o descargas que no se deben perder."""
+        for table in ("UserFavorite", "UserWatchLater", "UserWatching",
+                      "UserView", "WatchProgressEntity",
+                      "ViewedEpisodeEntity", "DownloadedEpisodeEntity"):
+            if self._scalar("SELECT COUNT(*) FROM " + table):
+                return True
+        return False
 
     def max_episode_id(self):
         return self._scalar("SELECT MAX(id) FROM EpisodeEntity") or 0

@@ -38,7 +38,13 @@ _OLD_DIRS = {
     _home(".config", "kawaii-linux"): CONFIG_DIR,
 }
 
+OFFICIAL_APK_URL = (
+    "https://github.com/animelhd/kawaii-animes/raw/main/app-release.apk"
+)
+CACHED_APK_PATH = os.path.join(DATA_DIR, "app-release.apk")
+
 CANDIDATE_APKS = [
+    CACHED_APK_PATH,
     _home("Descargas", "app-release.apk"),
     _home("Downloads", "app-release.apk"),
     _home("Descargas", "Descargas", "app-release.apk"),

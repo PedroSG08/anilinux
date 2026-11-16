@@ -40,11 +40,13 @@ de **Python 3**: no hay dependencias, no hay Java, no hay emulador.
 * **Progreso persistente**: el avance se guarda cada ~5 s.  Al dejar un
   capítulo a medias aparece en Continuar; solo se marca como visto al llegar
   al 95 % o a menos de 15 s del final.
-* **Catálogo offline completo**: al primer arranque importa la base de
-  datos `assets/databases/kawaii_animes.db` incluida dentro del propio
-  APK (~2 400 animes, ~37 000 episodios, ~160 000 enlaces).  Si no hay
-  APK, reconstruye el catálogo completo desde el API paginando
-  `POST /bulk-sync` (`server` → `anime` → `episode` → `player`).
+* **Catálogo offline completo**: la fuente de verdad es la base de datos
+  `assets/databases/kawaii_animes.db` incluida dentro del APK oficial de la
+  app (~2 400 animes, ~37 000 episodios, ~160 000 enlaces).  En el primer
+  arranque, si no hay catálogo local, se descarga el APK oficial
+  automáticamente (~25 MB) y se importa; queda cacheado para las siguientes
+  ejecuciones.  Un clon nuevo nunca arranca con una lista vieja o vacía.
+  La API v4 ya no publica el catálogo: solo devuelve los servidores.
 * **Sincronización incremental** con `POST /sync` usando los cursores
   `lei`/`laua`/`lpua` (mismo mecanismo que la app).
 * **Login real** contra el servidor:
@@ -93,14 +95,16 @@ de **Python 3**: no hay dependencias, no hay Java, no hay emulador.
   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
   source ~/.bashrc
   ```
-* (Recomendado) guarda el APK de la app como `~/Descargas/app-release.apk`:
-  al primer arranque importa el catálogo completo (~2 400 animes,
-  ~37 000 episodios) en un segundo, sin conexión.  Sin APK también funciona,
-  pero el primer arranque reconstruye el catálogo completo desde el API
-  (puede tardar varios minutos).
 * Arranca y listo:
   ```bash
   anilinux
+  ```
+  El primer arranque descarga el APK oficial y su catálogo (~2 400 animes,
+  ~37 000 episodios) automáticamente.  Solo necesita conexión esa primera
+  vez; después funciona sin red.
+* (Opcional) si ya tienes el APK, evita la descarga:
+  ```bash
+  anilinux --apk ~/Descargas/app-release.apk
   ```
 
 **Desinstalación**
@@ -114,23 +118,35 @@ rm -rf ~/.local/share/anilinux-terminal ~/.config/anilinux-terminal
 ## Uso
 
 ```bash
-anilinux                              # arrancar
+anilinux                    # arrancar (descarga el catálogo si falta)
+anilinux --update           # descargar el APK oficial y actualizar el catálogo
+anilinux --no-download      # no descargar; usar APK local o API
+anilinux --apk RUTA         # importar/fusionar un APK concreto
+anilinux --no-sync          # no sincronizar al arrancar
 ```
+
+`--update` (o `--bootstrap`) descarga la última versión del APK oficial y
+fusiona su catálogo **sin borrar** tus listas, progreso ni descargas.  Si la
+descarga falla, conserva el catálogo que ya tenías.  El APK queda guardado en
+`~/.local/share/anilinux-terminal/app-release.apk` para no volver a bajarlo.
 
 Instalación del comando: se crea un symlink
-`~/.local/bin/anilinux → ~/anilinux/anilinux`.  Si el `~/.local/bin`
-no está en tu PATH, el `.bashrc` instalado lo añade automáticamente; si
-mueves el proyecto a otra ruta, recrea el symlink con
-`ln -sf RUTA/nueva/anilinux ~/.local/bin/anilinux`.
+`~/.local/bin/anilinux → ~/anilinux/anilinux`.  Si `~/.local/bin` no está en
+tu `PATH`, añádelo a tu shell.  Si mueves el proyecto a otra ruta, recrea el
+symlink con `ln -sf RUTA/nueva/anilinux ~/.local/bin/anilinux`.
 
-Si prefieres, instala a mano el catálogo sin TUI interactiva:
+## Actualizar en otro dispositivo
 
 ```bash
-python3 -c "import sys; sys.path.insert(0,'$HOME/anilinux'); \
-from anilinux_tui.database import Catalog; \
-d=Catalog('$HOME/.local/share/anilinux-terminal/catalog.db'); \
-print(d.import_from_apk('$HOME/Descargas/app-release.apk'))"
+cd ~/anilinux
+git pull --ff-only
+anilinux --update
 ```
+
+`git pull --ff-only` actualiza el código y `--update` el catálogo.  Si el
+`git pull` se queja de cambios locales, revisa `git status` y guarda una
+copia antes de forzar nada: no hace falta borrar el proyecto ni la base de
+datos.
 
 ## Estructura del proyecto
 
@@ -151,6 +167,7 @@ anilinux/
 | Archivo | Contenido |
 |---|---|
 | `~/.local/share/anilinux-terminal/catalog.db` | catálogo + tus listas locales |
+| `~/.local/share/anilinux-terminal/app-release.apk` | APK oficial cacheado (fuente del catálogo) |
 | `~/.config/anilinux-terminal/session.json` | token de sesión (chmod 600) |
 | `~/.config/anilinux-terminal/settings.json` | preferencias (reproductor, etc.) |
 
