@@ -9,7 +9,6 @@ de **Python 3**: no hay dependencias, no hay Java, no hay emulador.
 │ Cuenta: Invitado · 2387 animes · 36970 episodios · 4 servidores           │
 │ CONTENIDOS  │ Elige la sección con ↑↓ y ábrela con Enter o →              │
 │ ‹ Inicio    │                                                             │
-│ › Continuar │                                                             │
 │ › Explorar  │ …                                                           │
 │ › Géneros   │                                                             │
 │ › Buscar    │                                                             │
@@ -25,11 +24,10 @@ de **Python 3**: no hay dependencias, no hay Java, no hay emulador.
 * **Navegación 100 % de teclado**: flechas ↑↓←→, Enter para abrir, Esc/←
   para volver, `q` para salir.
 * **Secciones** equivalentes a la app Android:
-  - **Inicio** — Continuar viendo, Novedades, Últimos episodios, Populares,
-    Mejor valorados, En emisión, Películas, Audio latino, Audio castellano.
-  - **Continuar** — capítulos empezados y no terminados, ordenados por
-    actividad reciente.  Muestra barra de progreso y tiempo restante; Enter
-    reanuda en la posición guardada.
+  - **Inicio** — Continuar viendo (capítulos a medias ordenados por actividad
+    reciente, con barra de progreso y tiempo restante; Enter reanuda en la
+    posición guardada), Novedades, Últimos episodios, Populares, Mejor
+    valorados, En emisión, Películas, Audio latino, Audio castellano.
   - **Explorar** — Todos, En emisión, Finalizados, Películas, OVA, ONA,
     Especiales, Populares, Mejor valorados…
   - **Géneros** — lista completa de géneros con recuento.
@@ -38,8 +36,8 @@ de **Python 3**: no hay dependencias, no hay Java, no hay emulador.
   - **Perfil** — tu cuenta.
   - **Ajustes** — sincronización, reproductor, estado del catálogo.
 * **Progreso persistente**: el avance se guarda cada ~5 s.  Al dejar un
-  capítulo a medias aparece en Continuar; solo se marca como visto al llegar
-  al 95 % o a menos de 15 s del final.
+  capítulo a medias aparece en Inicio → Continuar viendo; solo se marca como
+  visto al llegar al 95 % o a menos de 15 s del final.
 * **Catálogo offline completo**: la fuente de verdad es la base de datos
   `assets/databases/kawaii_animes.db` incluida dentro del APK oficial de la
   app (~2 400 animes, ~37 000 episodios, ~160 000 enlaces).  En el primer

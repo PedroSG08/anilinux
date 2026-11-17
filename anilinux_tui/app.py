@@ -36,11 +36,11 @@ def _visible_window(text, cursor, width):
 
 class App:
     SECTIONS = (
-        "inicio", "continuar", "explorar", "generos", "buscar", "calendario",
+        "inicio", "explorar", "generos", "buscar", "calendario",
         "perfil", "ajustes",
     )
     SECTION_LABELS = (
-        "Inicio", "Continuar", "Explorar", "Géneros", "Buscar", "Calendario",
+        "Inicio", "Explorar", "Géneros", "Buscar", "Calendario",
         "Perfil", "Ajustes",
     )
 
@@ -345,7 +345,6 @@ class App:
     def run_section(self, name):
         handlers = {
             "inicio": self.scr_inicio,
-            "continuar": self.scr_continuar,
             "explorar": self.scr_explorar,
             "generos": self.scr_generos,
             "buscar": self.scr_buscar,
@@ -831,7 +830,8 @@ class App:
     def episode_flow(self, anime, ep, start_ms=0):
         """Idioma → reproducción automática (sin más menús).
 
-        start_ms > 0 reanuda el capítulo en esa posición (pestaña Continuar)."""
+        start_ms > 0 reanuda el capítulo en esa posición (Inicio → Continuar
+        viendo)."""
         langs = self.db.languages_for_episode(ep["id"])
         if not langs:
             self.alert("No hay servidores disponibles para este episodio.",
@@ -917,8 +917,8 @@ class App:
         En kitty y tct mpv dibuja SOBRE la pantalla alterna de la TUI (no
         salta a la principal), para no perder la pantalla del usuario.
 
-        start_ms reanuda en esa posición (pestaña Continuar). Mientras se
-        reproduce se guarda el progreso cada ~5 s; solo se marca como visto
+        start_ms reanuda en esa posición (Inicio → Continuar viendo). Mientras
+        se reproduce se guarda el progreso cada ~5 s; solo se marca como visto
         si de verdad se llega al final."""
         self.flash_msg = None
         resume_s = max(0.0, float(start_ms or 0) / 1000.0)
@@ -1771,7 +1771,7 @@ class App:
         return "%d:%02d:%02d" % (h, m, s) if h else "%d:%02d" % (m, s)
 
     def _save_playback_progress(self, anime, ep, position_ms, duration_ms):
-        """Guarda un avance parcial (para la pestaña Continuar)."""
+        """Guarda un avance parcial (para Inicio → Continuar viendo)."""
         uid = self.session.user_id
         pos = max(0, int(position_ms or 0))
         dur = max(0, int(duration_ms or 0))
@@ -1861,7 +1861,7 @@ class App:
                 self.episode_flow(anime, ep)
 
     def _continue_label(self, row):
-        """Fila de la pestaña Continuar: anime, capítulo y avance."""
+        """Fila de Continuar viendo: anime, capítulo y avance."""
         name = row.get("anime_name") or "?"
         ep = row.get("episode_number")
         ep = "?" if ep is None else str(ep)
@@ -1890,7 +1890,7 @@ class App:
         sel, offset = 0, 0
         while True:
             y, x, h, w = self.draw_base(
-                "continuar", "Continuar viendo",
+                "inicio", "Continuar viendo",
                 HINT_BACK + " · Enter reanuda")
             items = [(self._continue_label(r), None) for r in rows]
             items.append(("Volver", C.FG_DIM))
