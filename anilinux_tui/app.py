@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """Aplicación TUI de AniLinux Terminal.
 
-Navegación estilo asistente: barra lateral (rail) con las secciones,
-navegable con ↑/↓ y Enter o →. Dentro de cada sección se navega igual
-y con Esc/← se vuelve atrás.
+Barra lateral (rail) con las secciones: al moverla con ↑/↓ se previsualiza
+el contenido de cada sección; Enter/→ entra en ella para elegir una opción
+y Esc/← vuelve al rail.
 """
 import os
 import re
@@ -20,6 +20,7 @@ from .api import parse_auth, parse_lists, parse_user
 from .tui import C, draw_box, fit, pad, visible_len, wrap
 
 HINT_BACK = "↑↓ mover   ·   Enter/→ seleccionar   ·   Esc/← volver   ·   q salir"
+HINT_PREVIEW = "↑↓ cambiar sección   ·   Enter/→ entrar   ·   q salir"
 HINT_LIST = ("↑↓/PgUp/PgDn navegar · Enter detalles · f ★fav · t ⌛luego · "
              "g ▶viendo · v ✓visto · Esc volver")
 
@@ -54,6 +55,7 @@ class App:
         self.flash_msg = None
         self.flash_ts = 0.0
         self._restore = None
+        self._previewing = False
 
     # ================================================================= #
     # ciclo principal
@@ -77,7 +79,9 @@ class App:
     def rail_loop(self):
         sel = 0
         while True:
-            self.draw_rail_frame(sel)
+            # El contenido de la sección seleccionada se muestra ya, sin
+            # necesidad de pulsar →.  →/Enter entra a elegir una opción.
+            self.run_section(self.SECTIONS[sel], preview=True)
             try:
                 key = tui.read_key()
             except (KeyboardInterrupt, EOFError):
@@ -103,6 +107,8 @@ class App:
 
     def draw_base(self, active, title, hint, rail_sel=-1):
         """Dibuja marco completo. Devuelve rect de contenido (y, x, h, w)."""
+        if self._previewing:
+            hint = HINT_PREVIEW
         W, H = self._terminal()
         self.scr.clear()
         # cabecera
@@ -167,33 +173,6 @@ class App:
                  title if title else "", C.BORDER)
         return y, x, h, w
 
-    def draw_rail_frame(self, sel):
-        hint = (f"Enter/→ abre {self.SECTION_LABELS[sel]}   ·   "
-                "↑↓ mover   ·   q salir   ·   e ajustes")
-        y, x, h, w = self.draw_base(None, "Bienvenido 👋", hint, rail_sel=sel)
-        lines = [
-            (f"Cliente nativo de Kawaii Animes para Linux", C.ACCENT + C.BOLD),
-            ("", 0),
-            (f"Catálogo local · {self.db.count_animes()} animes · "
-             f"{self.db.count_episodes()} episodios · {self.db.count_servers()} servidores", C.FG),
-            (f"Última sincronización: {self.db.get_meta('last_sync', '—')}", C.FG_DIM),
-            (f"Cuenta: {self.session.label}", C.FG),
-            ("", 0),
-            ("Elige la sección con ↑↓ y ábrela con Enter o →", C.ACCENT2),
-            ("Todo funciona con el teclado. Pulsa q para salir.", C.FG_DIM),
-        ]
-        yy = y
-        for text, col in lines:
-            if yy >= y + h - 1:
-                break
-            self.scr.move(yy, x + 2)
-            if col:
-                self.scr.write(col + fit(str(text), w - 4) + "")
-            else:
-                self.scr.write(fit(str(text), w - 4))
-            self.scr.write(C.RESET)
-            yy += 1
-
     @staticmethod
     def _fix_offset(sel, offset, h, n):
         if sel < offset:
@@ -204,6 +183,8 @@ class App:
 
     def menu(self, y, x, h, w, items, sel, offset):
         """Dibuja un menú vertical desplazable.  items: [(texto, color|None)]"""
+        if self._previewing:
+            sel = -1          # la vista previa no selecciona ninguna opción
         n = len(items)
         offset = self._fix_offset(sel, offset, h, n)
         show = min(h, n)
@@ -342,7 +323,7 @@ class App:
     # ================================================================= #
     # enrutamiento de secciones
     # ================================================================= #
-    def run_section(self, name):
+    def run_section(self, name, preview=False):
         handlers = {
             "inicio": self.scr_inicio,
             "explorar": self.scr_explorar,
@@ -352,12 +333,16 @@ class App:
             "perfil": self.scr_perfil,
             "ajustes": self.scr_ajustes,
         }
-        handlers[name]()
+        self._previewing = preview
+        try:
+            handlers[name](preview=preview)
+        finally:
+            self._previewing = False
 
     # ------------------------------------------------------------------ #
     # INICIO
     # ------------------------------------------------------------------ #
-    def scr_inicio(self):
+    def scr_inicio(self, preview=False):
         items = [
             ("Continuar viendo", None),
             ("Novedades (más recientes)", None),
@@ -374,6 +359,8 @@ class App:
         while True:
             y, x, h, w = self.draw_base("inicio", "Inicio", HINT_BACK)
             self.menu(y + 1, x + 2, min(h - 2, len(items)), w - 4, items, sel, offset)
+            if preview:
+                return
             key = tui.read_key()
             if key == "up":
                 sel = (sel - 1) % len(items)
@@ -406,7 +393,7 @@ class App:
     # ------------------------------------------------------------------ #
     # EXPLORAR
     # ------------------------------------------------------------------ #
-    def scr_explorar(self):
+    def scr_explorar(self, preview=False):
         items = [
             ("Todos los animes (A-Z)", None),
             ("En emisión", None),
@@ -432,6 +419,8 @@ class App:
         while True:
             y, x, h, w = self.draw_base("explorar", "Explorar", HINT_BACK)
             self.menu(y + 1, x + 2, min(h - 2, len(items)), w - 4, items, sel, offset)
+            if preview:
+                return
             key = tui.read_key()
             if key == "up":
                 sel = (sel - 1) % len(items)
@@ -483,10 +472,17 @@ class App:
     # ------------------------------------------------------------------ #
     # GÉNEROS
     # ------------------------------------------------------------------ #
-    def scr_generos(self):
+    def scr_generos(self, preview=False):
         genres = self.db.genres()
         if not genres:
-            self.flash("Sin datos de géneros. Sincroniza el catálogo.", "warn")
+            if preview:
+                y, x, h, w = self.draw_base("generos", "Géneros", HINT_BACK)
+                self.scr.move(y + 1, x + 2)
+                self.scr.write(C.WARN + fit(
+                    "Sin datos de géneros. Sincroniza el catálogo.", w - 4))
+            else:
+                self.flash("Sin datos de géneros. Sincroniza el catálogo.",
+                           "warn")
             return
         items = [(f"{name} ({cnt})", None) for name, cnt in genres] + \
                 [("Volver", C.FG_DIM)]
@@ -494,6 +490,8 @@ class App:
         while True:
             y, x, h, w = self.draw_base("generos", "Géneros", HINT_BACK)
             self.menu(y + 1, x + 2, min(h - 2, len(items)), w - 4, items, sel, offset)
+            if preview:
+                return
             key = tui.read_key()
             if key == "up":
                 sel = (sel - 1) % len(items)
@@ -512,7 +510,10 @@ class App:
     # ------------------------------------------------------------------ #
     # BUSCAR
     # ------------------------------------------------------------------ #
-    def scr_buscar(self):
+    def scr_buscar(self, preview=False):
+        if preview:
+            self.input_small("Buscar anime…", preview=True)
+            return
         while True:
             q = self.input_small("Buscar anime…")
             if q is None:
@@ -528,7 +529,7 @@ class App:
             self.list_screen(f'Resultados para «{q}» ({len(rows)})', rows,
                              empty_text="Sin resultados.")
 
-    def input_small(self, placeholder):
+    def input_small(self, placeholder, preview=False):
         W, H = self._terminal()
         w = max(40, min(W - 28, 62))
         y0, x0, _, _ = self.centered(W, H, height=5, width=w)
@@ -539,6 +540,8 @@ class App:
         draw_box(self.scr, y0 - 1, x0 - 1, 7, w + 2, "Buscar", C.ACCENT2)
         self.scr.move(y0, x0 + 1)
         self.scr.write(C.FG_DIM + fit(placeholder, field_w) + C.RESET)
+        if preview:
+            return None
         while True:
             line, start = _visible_window(value, cursor, field_w - 1)
             line = fit(line, field_w - 1)
@@ -565,7 +568,7 @@ class App:
     # ------------------------------------------------------------------ #
     # CALENDARIO
     # ------------------------------------------------------------------ #
-    def scr_calendario(self):
+    def scr_calendario(self, preview=False):
         today = (time.localtime().tm_wday + 1)   # lunes = 1 … domingo = 7
         days = list(config.BROADCAST_DAYS)       # [1..7]
         items = [(f"{config.BROADCAST_DAYS[today]} (hoy)", C.ACCENT)] + \
@@ -575,6 +578,8 @@ class App:
         while True:
             y, x, h, w = self.draw_base("calendario", "Calendario de emisión", HINT_BACK)
             self.menu(y + 1, x + 2, min(h - 2, len(items)), w - 4, items, sel, offset)
+            if preview:
+                return
             key = tui.read_key()
             if key == "up":
                 sel = (sel - 1) % len(items)
@@ -1940,9 +1945,9 @@ class App:
     # ================================================================= #
     # PERFIL
     # ================================================================= #
-    def scr_perfil(self):
+    def scr_perfil(self, preview=False):
         if not self.session.is_logged:
-            self.scr_auth()
+            self.scr_auth(preview=preview)
             return
         u = self.session.user or {}
         while True:
@@ -1969,6 +1974,8 @@ class App:
             while True:
                 self.menu(y + 3, x + 2, min(len(items), max(1, h - 4)), w - 4,
                           items, sel, offset)
+                if preview:
+                    return
                 key = tui.read_key()
                 if key == "up":
                     sel = (sel - 1) % len(items)
@@ -2007,7 +2014,7 @@ class App:
     # ------------------------------------------------------------------ #
     # autenticación
     # ------------------------------------------------------------------ #
-    def scr_auth(self):
+    def scr_auth(self, preview=False):
         while True:
             y, x, h, w = self.draw_base("perfil", "Perfil · invitado", HINT_BACK)
             self.scr.move(y, x + 1)
@@ -2024,6 +2031,8 @@ class App:
             sel = 0
             while True:
                 self.menu(y + 4, x + 2, len(items), w - 4, items, sel, 0)
+                if preview:
+                    return
                 key = tui.read_key()
                 if key == "up":
                     sel = (sel - 1) % len(items)
@@ -2165,7 +2174,7 @@ class App:
     # ================================================================= #
     # AJUSTES
     # ================================================================= #
-    def scr_ajustes(self):
+    def scr_ajustes(self, preview=False):
         while True:
             y, x, h, w = self.draw_base("ajustes", "Ajustes", HINT_BACK)
             items = [
@@ -2181,6 +2190,8 @@ class App:
             while True:
                 self.menu(y + 1, x + 2, min(len(items), max(1, h - 2)), w - 4,
                           items, sel, offset)
+                if preview:
+                    return
                 key = tui.read_key()
                 if key == "up":
                     sel = (sel - 1) % len(items)

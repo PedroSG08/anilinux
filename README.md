@@ -7,22 +7,25 @@ de **Python 3**: no hay dependencias, no hay Java, no hay emulador.
 ```
 ╭── ANILINUX TERMINAL ──────────────────────────────────────────────────────╮
 │ Cuenta: Invitado · 2387 animes · 36970 episodios · 4 servidores           │
-│ CONTENIDOS  │ Elige la sección con ↑↓ y ábrela con Enter o →              │
-│ ‹ Inicio    │                                                             │
-│ › Explorar  │ …                                                           │
-│ › Géneros   │                                                             │
-│ › Buscar    │                                                             │
-│ › Calendario│                                                             │
-│ › Perfil    │                                                             │
-│ › Ajustes   │                                                             │
+│ SECCIONES     │                                                           │
+│ ▌ Inicio      │ Continuar viendo                                          │
+│   Explorar    │ Novedades (más recientes)                                 │
+│   Géneros     │ Últimos episodios añadidos                                │
+│   Buscar      │ Populares (más vistos)                                    │
+│   Calendario  │ Mejor valorados                                           │
+│   Perfil      │ En emisión                                                │
+│   Ajustes     │ Películas                                                 │
+│               │ Audio latino                                              │
+│               │ Audio castellano                                          │
 ╰───────────────────────────────────────────────────────────────────────────╯
- ↑↓ mover · Enter/→ abrir · q salir
+ ↑↓ cambiar sección · Enter/→ entrar · q salir
 ```
 
 ## Qué incluye
 
-* **Navegación 100 % de teclado**: flechas ↑↓←→, Enter para abrir, Esc/←
-  para volver, `q` para salir.
+* **Navegación 100 % de teclado**: al mover el rail con ↑/↓ se muestra al
+  instante el contenido de cada sección.  Enter/→ entra en sus opciones y
+  Esc/← vuelve al rail; `q` sale.
 * **Secciones** equivalentes a la app Android:
   - **Inicio** — Continuar viendo (capítulos a medias ordenados por actividad
     reciente, con barra de progreso y tiempo restante; Enter reanuda en la
