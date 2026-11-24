@@ -88,6 +88,7 @@ DEFAULT_SETTINGS = {
     "player": "auto",          # auto | mpv | browser
     "incremental_sync": True,  # sincronizar catálogo al arrancar
     "last_language": "0",      # idioma preferido para reproducir
+    "auto_update": True,       # actualizar el programa desde origin/main
 }
 
 def load_settings():

@@ -124,12 +124,35 @@ anilinux --update           # descargar el APK oficial y actualizar el catálogo
 anilinux --no-download      # no descargar; usar APK local o API
 anilinux --apk RUTA         # importar/fusionar un APK concreto
 anilinux --no-sync          # no sincronizar al arrancar
+anilinux --self-update      # comprobar ya si hay versión nueva del programa
+anilinux --no-self-update   # no comprobar versiones en este arranque
 ```
 
 `--update` (o `--bootstrap`) descarga la última versión del APK oficial y
 fusiona su catálogo **sin borrar** tus listas, progreso ni descargas.  Si la
 descarga falla, conserva el catálogo que ya tenías.  El APK queda guardado en
 `~/.local/share/anilinux-terminal/app-release.apk` para no volver a bajarlo.
+
+## Actualización automática del programa
+
+Además del catálogo (que se actualiza desde el APK), el **código** de
+AniLinux Terminal se actualiza solo desde `origin/main`:
+
+* Al arrancar (como máximo cada 6 horas) se consulta el repositorio.  Si hay
+  una versión nueva, se aplica un `git pull --ff-only` y la TUI se reinicia
+  sola con el código nuevo.
+* `--update`, `--bootstrap` y `--self-update` fuerzan la comprobación.
+* Si hay cambios locales en el código, la rama no es `main`, el historial ha
+  divergido o no hay conexión, **no se cambia nada** y el programa arranca
+  igualmente (se muestra un aviso solo cuando la comprobación es forzada).
+* Para desactivarla: añade `"auto_update": false` a
+  `~/.config/anilinux-terminal/settings.json`, usa `--no-self-update` o define
+  `ANILINUX_NO_SELF_UPDATE=1`. Los archivos `.pyc`/`__pycache__` se ignoran al
+  comprobar cambios locales.
+
+Así, cuando sale una versión nueva del APK, basta con ejecutar
+`anilinux --update`: se fusiona el catálogo y el programa se actualiza a la
+vez, sin tocar listas, favoritos, progreso ni descargas.
 
 Instalación del comando: se crea un symlink
 `~/.local/bin/anilinux → ~/anilinux/anilinux`.  Si `~/.local/bin` no está en

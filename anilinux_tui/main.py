@@ -11,6 +11,7 @@ import zipfile
 
 from . import api as api_mod
 from . import config
+from . import selfupdate
 from .app import App
 from .database import Catalog
 from .session import Session
@@ -148,11 +149,30 @@ def main(argv=None):
                         help="no descargar el APK oficial si no hay catálogo")
     parser.add_argument("--no-sync", action="store_true",
                         help="no sincronizar incrementalmente al arrancar")
+    parser.add_argument("--self-update", action="store_true",
+                        help="comprobar actualizaciones del programa ahora")
+    parser.add_argument("--no-self-update", action="store_true",
+                        help="no actualizar el programa en este arranque")
     parser.add_argument("--version", action="version",
                         version=f"AniLinux Terminal {config.APP_VERSION}")
     args = parser.parse_args(argv)
 
     config.ensure_dirs()
+
+    # --- actualización automática del programa (independiente del catálogo) -
+    # El APK actualiza los datos; git actualiza el código.  Si hay una versión
+    # nueva y el árbol de trabajo está limpio, se aplica un fast-forward y se
+    # reinicia la TUI para que use el código nuevo.
+    if not args.no_self_update:
+        force = args.self_update or args.update or args.bootstrap
+        if selfupdate.should_check(force=force):
+            status, detail = selfupdate.check(force=force)
+            if status == "updated":
+                log(f"[programa] Actualizado {detail}; reiniciando…")
+                selfupdate.reexec()
+            elif force and status in ("skipped", "failed", "unavailable"):
+                log(f"[programa] No se actualizó: {detail}")
+
     settings = config.load_settings()
     api_ref = api_mod.KawaiiApi()
     session = Session()
