@@ -89,6 +89,7 @@ DEFAULT_SETTINGS = {
     "incremental_sync": True,  # sincronizar catálogo al arrancar
     "last_language": "0",      # idioma preferido para reproducir
     "auto_update": True,       # actualizar el programa desde origin/main
+    "auto_sync_lists": True,   # sincronizar cuenta y listas al arrancar
 }
 
 def load_settings():

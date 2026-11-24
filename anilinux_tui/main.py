@@ -9,6 +9,7 @@ import urllib.error
 import urllib.request
 import zipfile
 
+from . import accountsync
 from . import api as api_mod
 from . import config
 from . import selfupdate
@@ -149,6 +150,10 @@ def main(argv=None):
                         help="no descargar el APK oficial si no hay catálogo")
     parser.add_argument("--no-sync", action="store_true",
                         help="no sincronizar incrementalmente al arrancar")
+    parser.add_argument("--sync-lists", action="store_true",
+                        help="forzar la sincronización de cuenta y listas")
+    parser.add_argument("--no-sync-lists", action="store_true",
+                        help="no sincronizar cuenta y listas en este arranque")
     parser.add_argument("--self-update", action="store_true",
                         help="comprobar actualizaciones del programa ahora")
     parser.add_argument("--no-self-update", action="store_true",
@@ -270,6 +275,25 @@ def main(argv=None):
                 db.set_meta("last_sync", time.strftime("%Y-%m-%d %H:%M:%S"))
             except api_mod.ApiError as exc:
                 log(f"[sync] Aviso: {exc} (se usa el catálogo local)")
+
+        # --- cuenta y listas del usuario (solo si hay sesión guardada) ----
+        # Se hace antes de entrar en la TUI para no interferir con la pantalla.
+        # Un fallo de red nunca impide abrir el programa ni borra listas.
+        want_sync = (args.sync_lists or
+                     (settings.get("auto_sync_lists", True) and
+                      os.environ.get("ANILINUX_NO_SYNC_LISTS", "").strip().lower()
+                      not in ("1", "true", "yes", "on")))
+        if want_sync and not args.no_sync_lists:
+            try:
+                status, detail = accountsync.sync(
+                    api_mod.KawaiiApi(timeout=8, retries=1), db, session)
+                if status == "synced":
+                    log(f"[cuenta] Listas sincronizadas: {detail}")
+                elif status == "failed" or (status == "no_session" and
+                                            args.sync_lists):
+                    log(f"[cuenta] Aviso: {detail}")
+            except Exception as exc:
+                log(f"[cuenta] Aviso: no se pudo sincronizar ({exc})")
 
         app = App(api_ref, db, session, settings)
         app.run()

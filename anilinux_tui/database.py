@@ -87,10 +87,27 @@ CREATE TABLE IF NOT EXISTS ViewedEpisodeEntity (
 CREATE TABLE IF NOT EXISTS SearchedAnimeEntity (
     anime_id INTEGER PRIMARY KEY NOT NULL, visited_at TEXT NOT NULL DEFAULT ''
 );
+-- Cambios hechos sin conexión (o no confirmados por el servidor) que se
+-- reintentan al arrancar.  Así la sincronización automática nunca pierde
+-- acciones del usuario.
+CREATE TABLE IF NOT EXISTS PendingSync (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL DEFAULT 0,
+    op TEXT NOT NULL,
+    table_name TEXT NOT NULL DEFAULT '',
+    anime_id INTEGER NOT NULL DEFAULT 0,
+    episode_id INTEGER NOT NULL DEFAULT 0,
+    episode_number INTEGER NOT NULL DEFAULT 0,
+    position_ms INTEGER NOT NULL DEFAULT 0,
+    duration_ms INTEGER NOT NULL DEFAULT 0,
+    completed INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS _kmeta (k TEXT PRIMARY KEY, v TEXT);
 CREATE INDEX IF NOT EXISTS idx_episodes_anime ON EpisodeEntity(anime_id);
 CREATE INDEX IF NOT EXISTS idx_players_episode ON PlayerEntity(episode_id);
 CREATE INDEX IF NOT EXISTS idx_progress_updated ON WatchProgressEntity(updated_at);
+CREATE INDEX IF NOT EXISTS idx_pending_user ON PendingSync(user_id, id);
 """
 
 ANIME_COLS = (
@@ -582,10 +599,10 @@ class Catalog:
             f"SELECT COUNT(*) FROM {table} WHERE anime_id = ? AND user_id = ?",
             (int(anime_id), int(user_id))))
 
-    def add_list(self, table, user_id, anime_id):
+    def add_list(self, table, user_id, anime_id, updated_at=None):
         self.con.execute(
             f"INSERT OR REPLACE INTO {table} (anime_id, user_id, updated_at) VALUES (?, ?, ?)",
-            (int(anime_id), int(user_id), _now()))
+            (int(anime_id), int(user_id), updated_at or _now()))
         self.con.commit()
 
     def remove_list(self, table, user_id, anime_id):
@@ -660,13 +677,15 @@ class Catalog:
         self.con.commit()
 
     def put_progress(self, user_id, episode_id, anime_id, episode_number,
-                     position_ms=0, duration_ms=0, completed=True):
+                     position_ms=0, duration_ms=0, completed=True,
+                     updated_at=None):
         self.con.execute(
             "INSERT OR REPLACE INTO WatchProgressEntity "
             "(episode_id, user_id, anime_id, episode_number, position_ms, duration_ms, "
             "updated_at, completed) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (int(episode_id), int(user_id), int(anime_id), int(episode_number),
-             int(position_ms), int(duration_ms), _now(), 1 if completed else 0))
+             int(position_ms), int(duration_ms), updated_at or _now(),
+             1 if completed else 0))
         self.con.commit()
 
     def delete_progress_anime(self, user_id, anime_id):
@@ -695,7 +714,7 @@ class Catalog:
             "ORDER BY s.visited_at DESC LIMIT ?", (int(limit),))
 
     # ------------------------------------------------------------------ #
-    # sincronización de listas del servidor (solo descarga)
+    # sincronización de listas del servidor
     # ------------------------------------------------------------------ #
     def merge_server_lists(self, user_id, lists):
         """Aplica GET /auth/lists/all a las tablas locales del usuario."""
@@ -716,7 +735,8 @@ class Catalog:
         for it in lists.get("progress", []):
             if it["eid"] and it["aid"]:
                 self.put_progress(user_id, it["eid"], it["aid"], it["en"],
-                                  it["pos"], it["dur"], it["c"])
+                                  it["pos"], it["dur"], it["c"],
+                                  updated_at=it["ua"] or _now())
         self.con.commit()
 
     def local_list_ids(self, user_id):
@@ -726,3 +746,65 @@ class Catalog:
                                     (user_id,)).fetchall()
             out[table] = {int(r[0]) for r in rows}
         return out
+
+    def local_list_map(self, user_id):
+        """Like ``local_list_ids`` but keeps each entry's timestamp."""
+        out = {}
+        for table in ("UserFavorite", "UserWatching", "UserWatchLater", "UserView"):
+            rows = self.con.execute(
+                f"SELECT anime_id, updated_at FROM {table} WHERE user_id = ?",
+                (user_id,)).fetchall()
+            out[table] = {int(r[0]): r[1] or "" for r in rows}
+        return out
+
+    def local_progress_map(self, user_id):
+        """Progreso local indexado por episodio (para no perderlo al fusionar)."""
+        rows = self.con.execute(
+            "SELECT episode_id, anime_id, episode_number, position_ms, duration_ms, "
+            "updated_at, completed FROM WatchProgressEntity WHERE user_id = ?",
+            (user_id,)).fetchall()
+        return {int(r["episode_id"]): dict(r) for r in rows}
+
+    # ------------------------------------------------------------------ #
+    # cola de cambios pendientes de subir al servidor
+    # ------------------------------------------------------------------ #
+    def queue_sync(self, op, user_id, table_name="", anime_id=0, episode_id=0,
+                   episode_number=0, position_ms=0, duration_ms=0,
+                   completed=False, updated_at=None):
+        """Guarda una operación que el servidor no confirmó.
+
+        El progreso se agrupa: solo interesa el último estado de cada
+        episodio, así que se sustituye cualquier entrada anterior.
+        """
+        if op == "progress":
+            self.con.execute(
+                "DELETE FROM PendingSync WHERE user_id = ? AND op = 'progress' "
+                "AND episode_id = ?", (int(user_id), int(episode_id)))
+        elif op.startswith(("add_", "remove_")):
+            self.con.execute(
+                "DELETE FROM PendingSync WHERE user_id = ? AND op = ? "
+                "AND table_name = ? AND anime_id = ?",
+                (int(user_id), str(op), table_name, int(anime_id)))
+        self.con.execute(
+            "INSERT INTO PendingSync "
+            "(user_id, op, table_name, anime_id, episode_id, episode_number, "
+            " position_ms, duration_ms, completed, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (int(user_id), str(op), table_name, int(anime_id), int(episode_id),
+             int(episode_number), int(position_ms), int(duration_ms),
+             1 if completed else 0, updated_at or _now()))
+        self.con.commit()
+
+    def pending_sync(self, user_id):
+        rows = self.con.execute(
+            "SELECT * FROM PendingSync WHERE user_id = ? ORDER BY id",
+            (int(user_id),)).fetchall()
+        return [dict(r) for r in rows]
+
+    def clear_pending_sync(self, ids):
+        ids = [int(i) for i in ids]
+        if not ids:
+            return
+        marks = ",".join("?" for _ in ids)
+        self.con.execute(f"DELETE FROM PendingSync WHERE id IN ({marks})", ids)
+        self.con.commit()

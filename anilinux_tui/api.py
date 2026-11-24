@@ -55,9 +55,10 @@ def _now():
 class KawaiiApi:
     """Fachada del API. Todas las llamadas son síncronas."""
 
-    def __init__(self, base_url=None, timeout=15):
+    def __init__(self, base_url=None, timeout=15, retries=3):
         self.base = (base_url or config.BASE_URL).rstrip("/")
         self.timeout = timeout
+        self.retries = max(1, int(retries))
         self._ctx = ssl.create_default_context()
 
     # ------------------------------------------------------------------ #
@@ -84,7 +85,7 @@ class KawaiiApi:
             headers["Authorization"] = "Bearer " + token
 
         last_exc = None
-        for attempt in range(3):
+        for attempt in range(self.retries):
             try:
                 req = urllib.request.Request(url, data=data, headers=headers, method=method)
                 with urllib.request.urlopen(req, timeout=self.timeout, context=self._ctx) as resp:

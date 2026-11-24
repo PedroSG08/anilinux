@@ -123,7 +123,9 @@ anilinux                    # arrancar (descarga el catálogo si falta)
 anilinux --update           # descargar el APK oficial y actualizar el catálogo
 anilinux --no-download      # no descargar; usar APK local o API
 anilinux --apk RUTA         # importar/fusionar un APK concreto
-anilinux --no-sync          # no sincronizar al arrancar
+anilinux --no-sync          # no sincronizar el catálogo al arrancar
+anilinux --sync-lists       # sincronizar ya la cuenta y las listas
+anilinux --no-sync-lists    # no sincronizar cuenta/listas en este arranque
 anilinux --self-update      # comprobar ya si hay versión nueva del programa
 anilinux --no-self-update   # no comprobar versiones en este arranque
 ```
@@ -154,6 +156,26 @@ Así, cuando sale una versión nueva del APK, basta con ejecutar
 `anilinux --update`: se fusiona el catálogo y el programa se actualiza a la
 vez, sin tocar listas, favoritos, progreso ni descargas.
 
+## Sincronización automática de cuenta y listas
+
+Al abrir la TUI, si hay una sesión guardada, se actualiza **antes de mostrar
+la pantalla**:
+
+* Se refresca el perfil (nombre, puntos, estado de la cuenta).
+* Se reenvían los cambios que no confirmó el servidor (por ejemplo, marcar
+  algo estando sin conexión): favoritos, siguiendo, ver más tarde, vistos y
+  progreso de reproducción.
+* Se descargan las listas del servidor y se fusionan sin borrar lo que tengas
+  en local. Un favorito recién añadido o un episodio con avance más reciente
+  se conserva aunque el servidor todavía no lo devuelva.
+
+Si la API falla o devuelve una respuesta vacía, **no se cambia nada**: el
+programa abre igualmente con la base local. Para desactivar esta
+sincronización, añade `"auto_sync_lists": false` a
+`~/.config/anilinux-terminal/settings.json`, usa `--no-sync-lists` o define
+`ANILINUX_NO_SYNC_LISTS=1`. Con `--sync-lists` se fuerza aunque esté
+desactivada.
+
 Instalación del comando: se crea un symlink
 `~/.local/bin/anilinux → ~/anilinux/anilinux`.  Si `~/.local/bin` no está en
 tu `PATH`, añádelo a tu shell.  Si mueves el proyecto a otra ruta, recrea el
@@ -182,6 +204,8 @@ anilinux/
     ├── api.py              # cliente del API v4 (auth, listas, sync)
     ├── database.py         # SQLite: esquema, import del APK, bulk/incremental
     ├── session.py          # sesión persistente (token + usuario)
+    ├── accountsync.py      # sincronización de cuenta/listas al arrancar
+    ├── selfupdate.py       # actualización del código desde origin/main
     ├── tui.py              # primitivas ANSI: teclado, colores, cajas
     └── app.py              # secciones y pantallas (rail + menús + listas)
 ```

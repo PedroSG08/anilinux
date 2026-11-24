@@ -12,11 +12,12 @@ import subprocess
 import sys
 import time
 
+from . import accountsync
 from . import config
 from . import extractors
 from . import tui
 from .api import ApiError, NetworkError
-from .api import parse_auth, parse_lists, parse_user
+from .api import parse_auth
 from .tui import C, draw_box, fit, pad, visible_len, wrap
 
 HINT_BACK = "↑↓ mover   ·   Enter/→ seleccionar   ·   Esc/← volver   ·   q salir"
@@ -693,7 +694,9 @@ class App:
                 try:
                     getattr(self.api, add_op)(self.session.token, anime_id)
                 except (ApiError, NetworkError) as exc:
-                    self.flash(f"Cambio local ok; servidor no confirmó ({exc})", "warn")
+                    self.db.queue_sync(add_op, uid, table_name=table,
+                                       anime_id=anime_id)
+                    self.flash(f"Cambio local ok; se reintentará al abrir ({exc})", "warn")
                     return
             self.flash(f"Añadido a {label}.", "ok")
         else:
@@ -702,7 +705,9 @@ class App:
                 try:
                     getattr(self.api, rm_op)(self.session.token, anime_id)
                 except (ApiError, NetworkError) as exc:
-                    self.flash(f"Cambio local ok; servidor no confirmó ({exc})", "warn")
+                    self.db.queue_sync(rm_op, uid, table_name=table,
+                                       anime_id=anime_id)
+                    self.flash(f"Cambio local ok; se reintentará al abrir ({exc})", "warn")
                     return
             self.flash(f"Quitado de {label}.", "info")
 
@@ -1787,6 +1792,13 @@ class App:
             dur = int(prev.get("duration_ms") or 0)
         self.db.put_progress(uid, ep["id"], anime["id"], ep["number"],
                              pos, dur, completed=False)
+        # Se sube al servidor en la próxima sincronización (al abrir).
+        if self.session.token:
+            self.db.queue_sync("progress", uid, episode_id=ep["id"],
+                               anime_id=anime["id"],
+                               episode_number=ep["number"],
+                               position_ms=pos, duration_ms=dur,
+                               completed=False)
 
     def mark_episode_viewed(self, anime, ep, position_ms=None,
                             duration_ms=None):
@@ -1802,17 +1814,29 @@ class App:
                              position_ms, duration_ms, completed=True)
         if self.session.token:
             now = time.strftime("%Y-%m-%d %H:%M:%S")
-            ok = False
+            ok_view = ok_progress = False
             try:
                 self.api.add_view(self.session.token, anime["id"])
+                ok_view = True
+            except (ApiError, NetworkError):
+                self.db.queue_sync("add_view", uid, table_name="UserView",
+                                   anime_id=anime["id"], updated_at=now)
+            try:
                 self.api.update_progress(self.session.token, ep["id"], anime["id"],
                                          ep["number"], position_ms, duration_ms,
                                          True, now)
-                ok = True
-            except (ApiError, NetworkError) as exc:
-                self.flash(f"Cambio local hecho; servidor sin confirmar ({exc})", "warn")
-            if ok:
+                ok_progress = True
+            except (ApiError, NetworkError):
+                self.db.queue_sync("progress", uid, episode_id=ep["id"],
+                                   anime_id=anime["id"],
+                                   episode_number=ep["number"],
+                                   position_ms=position_ms,
+                                   duration_ms=duration_ms, completed=True,
+                                   updated_at=now)
+            if ok_view and ok_progress:
                 self.flash("Episodio marcado como visto ✓ (sincronizado).", "ok")
+            else:
+                self.flash("Cambio local hecho; se reintentará al abrir.", "warn")
         else:
             self.flash("Episodio marcado como visto ✓ (local).", "ok")
 
@@ -1822,8 +1846,10 @@ class App:
         if self.session.token:
             try:
                 self.api.remove_view(self.session.token, anime["id"])
-            except (ApiError, NetworkError) as exc:
-                self.flash(f"Servidor sin confirmar ({exc})", "warn")
+            except (ApiError, NetworkError):
+                self.db.queue_sync("remove_view", uid, table_name="UserView",
+                                   anime_id=anime["id"])
+                self.flash("Servidor sin confirmar; se reintentará al abrir.", "warn")
         self.flash("Episodio desmarcado.", "info")
 
     # ------------------------------------------------------------------ #
@@ -2141,35 +2167,20 @@ class App:
                    title="Listo")
 
     def sync_lists(self, silent=False):
+        """Sincronización manual: usa la misma lógica segura que el arranque."""
         if not self.session.is_logged:
             if not silent:
                 self.alert("Inicia sesión primero.", title="Sincronizar listas")
             return
-        self.flash("Descargando listas del servidor…", )
+        self.flash("Sincronizando cuenta y listas…")
         self.draw_base(None, "Sincronizando…", "")
-        try:
-            resp = self.api.get_all_lists(self.session.token)
-            lists = parse_lists(resp)
-            self.db.merge_server_lists(self.session.user_id, lists)
-        except (ApiError, NetworkError) as exc:
-            if not silent:
-                self.alert(str(exc), title="Sincronizar listas")
-            else:
-                self.flash(f"Listas no sincronizadas: {exc}", "warn")
-            return
-        try:
-            fresh = parse_user(self.api.get_user(self.session.token))
-            if fresh.get("id"):
-                self.session.update_user(fresh)
-        except (ApiError, NetworkError):
-            pass
-        n_f = len(lists.get("favorites", []))
-        n_w = len(lists.get("watching", []))
-        n_l = len(lists.get("watchlater", []))
-        n_v = len(lists.get("views", []))
-        n_p = len(lists.get("progress", []))
-        self.flash(f"Listas sincronizadas: {n_f} fav · {n_w} viendo · {n_l} luego · "
-                   f"{n_v} vistos · {n_p} progreso", "ok")
+        status, detail = accountsync.sync(self.api, self.db, self.session)
+        if status == "synced":
+            self.flash(f"Listas sincronizadas: {detail}", "ok")
+        elif not silent:
+            self.alert(detail, title="Sincronizar listas")
+        else:
+            self.flash(f"Listas no sincronizadas: {detail}", "warn")
 
     # ================================================================= #
     # AJUSTES
