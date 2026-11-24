@@ -346,6 +346,8 @@ def _decode_kp2_link(link):
     """Intenta decodificar un enlace kp2: usando el algoritmo nativo V29.
 
     Retorna el link decodificado si tiene éxito, o None si no puede decodificarse.
+    El decoder extrae los 12 caracteres del payload y los aplica un 
+    permutationo simple para obtener el ID del catálogo en formato compatible.
     """
     try:
         # Extraer payload después de "kp2:"
@@ -354,31 +356,29 @@ def _decode_kp2_link(link):
             return None
         
         n = len(payload)
-        a = (n - 3) // 2
-        
-        # Separar en dos mitades (según la estructura kp2:)
-        # first = posiciones 1..a, second = posiciones a+2..
-        first = payload[1:1 + min(n - 1, a)] if n > 1 else ""
-        start = a + 2
-        second = payload[start:start + min(n - start, n - 3 - a)] if start < n else ""
-        
-        combined = first + second
-        
-        if len(combined) < 2:
+        if n != 15:
             return None
         
-        # Algoritmo simplificado: 
-        # - Reverse the combined string (intento básico de decodificación)
-        # - Si el resultado tiene pinta de ser un ID viejo (12 chars, alfanumérico), úsalo
-        reversed_combined = combined[::-1]
+        a = (n - 3) // 2  # = 6
         
-        # Verificar si el reverse parece un ID viejo (12 chars alfanuméricos)
-        if len(reversed_combined) == 12 and reversed_combined.isalnum():
-            return reversed_combined
+        # Extraer los 12 caracteres de datos (posiciones 1-6 y 8-13, saltándose el separador en posición 7)
+        # y la byte de HMAC en posiciones 0 y 14
+        available_positions = [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13]
         
-        # Fallback: intentar con el combined sin reverse
-        if len(combined) == 12 and combined.isalnum():
-            return combined
+        # Aplicar permutación simple (basada en el análisis de pares conocidos kp2→ID viejo)
+        # La permutación mapea posiciones del payload de 12 chars a el ID viejo formato
+        # Permución encontrada por análisis de pares kp2→ID viejo confirmados
+        simple_perm = [2, 7, 1, 3, 6, 11, 10, 5, 9, 4, 8, 0]
+        
+        # Construir el string de 12 chars desde las posiciones disponibles
+        combined = ''.join([payload[available_positions[i]] for i in range(12)])
+        
+        # Aplicar permutationo simple
+        result = ''.join([combined[simple_perm[i]] for i in range(12)])
+        
+        # Verificar que el resultado tenga formato de ID viejo (12 chars alfanuméricos)
+        if len(result) == 12 and result.isalnum():
+            return result
         
         return None
     except Exception:
