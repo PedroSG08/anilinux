@@ -185,5 +185,13 @@ migran automáticamente al primer arranque si el destino no existe.
 * Las conversaciones con el servidor usan las mismas cabeceras y cuerpo
   JSON que la app (`{"e": correo, "p": contraseña}`, `{"n": nombre, …}`),
   de modo que la cuenta y las listas son **las mismas** que en el móvil.
+* **Tokens `kp2:`**: la app Android 13.7 usa un nuevo formato de token `kp2:` en
+  los enlaces de los jugadores.  Esta versión incluye un descodificador propio que
+  intenta transformar esos tokens a enlaces compatibles con la resolución
+  habitual (servidores Delta/Byse y otros).  El primer arranque importa el catálogo
+  del APK oficial; los nuevos tokens `kp2:` se fusionan con la base existente mediante
+  `INSERT OR IGNORE`, por lo que **no se borran listas, favoritos, progreso ni
+  descargas**.  Si el descodificador no puede transformar un token concreto, la
+  reproducción falling back al flujo clásico o muestra un error amigable.
 * Este programa no es original ni pretende serlo. Unicamente busca adaptar la aplicación kawaii animes a linux, con el fin de hacer accesible el contenido al mayor número de personas posible. Todo el crédito a: https://github.com/animelhd/kawaii-animes  
   

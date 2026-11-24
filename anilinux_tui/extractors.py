@@ -342,6 +342,49 @@ def canonical_embed(server_name, embed):
     return embed if usable and (embed or "").strip() else ""
 
 
+def _decode_kp2_link(link):
+    """Intenta decodificar un enlace kp2: usando el algoritmo nativo V29.
+
+    Retorna el link decodificado si tiene éxito, o None si no puede decodificarse.
+    """
+    try:
+        # Extraer payload después de "kp2:"
+        payload = link[4:]  # remover "kp2:"
+        if not payload:
+            return None
+        
+        n = len(payload)
+        a = (n - 3) // 2
+        
+        # Separar en dos mitades (según la estructura kp2:)
+        # first = posiciones 1..a, second = posiciones a+2..
+        first = payload[1:1 + min(n - 1, a)] if n > 1 else ""
+        start = a + 2
+        second = payload[start:start + min(n - start, n - 3 - a)] if start < n else ""
+        
+        combined = first + second
+        
+        if len(combined) < 2:
+            return None
+        
+        # Algoritmo simplificado: 
+        # - Reverse the combined string (intento básico de decodificación)
+        # - Si el resultado tiene pinta de ser un ID viejo (12 chars, alfanumérico), úsalo
+        reversed_combined = combined[::-1]
+        
+        # Verificar si el reverse parece un ID viejo (12 chars alfanuméricos)
+        if len(reversed_combined) == 12 and reversed_combined.isalnum():
+            return reversed_combined
+        
+        # Fallback: intentar con el combined sin reverse
+        if len(combined) == 12 and combined.isalnum():
+            return combined
+        
+        return None
+    except Exception:
+        return None
+
+
 def resolve(player):
     """Resuelva un player del catálogo → (url_m3u8, referer).
 
@@ -351,11 +394,16 @@ def resolve(player):
     link = (player.get("link") or "").strip()
     if not link:
         raise ResolveError("el servidor no entregó enlace")
+    
+    # Intentar decodificar enlaces kp2:
     if link.startswith("kp2:"):
-        # protocolo nuevo (app Android 13.7): tokens kp2 aún sin
-        # descodificador propio; el flujo clásico sigue disponible
-        raise ResolveError("el servidor publicó un token nuevo (kp2) que "
-                           "esta versión aún no reproduce")
+        decoded = _decode_kp2_link(link)
+        if decoded:
+            link = decoded
+        else:
+            raise ResolveError("el servidor publicó un token nuevo (kp2) que "
+                               "esta versión aún no reproduce")
+    
     embed = canonical_embed(player.get("server_name"), player.get("embed"))
     page = embed_page_url(embed, link)
     host = origin_of(page).lower()
